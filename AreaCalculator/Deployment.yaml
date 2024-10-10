@@ -1,0 +1,69 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: my-app
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-web-app
+  namespace: my-app
+spec:
+  replicas: 3 # Параметр - 3 пода для обработки нагрузки
+  selector:
+    matchLabels:
+      app: my-web-app
+  template:
+    metadata:
+      labels:
+        app: my-web-app
+    spec:
+      affinity:
+        # Настройка размещения подов на разных нодах для отказоустойчивости
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - my-web-app
+            topologyKey: "kubernetes.io/hostname"
+      containers:
+      - name: web-app
+        image: my-web-app-image:latest # Имя образа
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "500m" # Запрос на CPU во время инициализации
+          limits:
+            memory: "128Mi"
+            cpu: "500m" # Ограничение на CPU, чтобы не потреблял больше во время выполнения
+        readinessProbe:
+          httpGet:
+            path: /healthz # Эндпоинт, который проверяет, готов ли сервис
+            port: 80
+          initialDelaySeconds: 10 # Задержка перед первой проверкой
+          periodSeconds: 5 # Проверяем каждые 5 секунд
+        startupProbe:
+          httpGet:
+            path: /healthz # Эндпоинт для проверки старта приложения
+            port: 80
+          initialDelaySeconds: 10 # Ждем 10 секунд до первой проверки старта
+          periodSeconds: 5 # Проверяем каждые 5 секунд
+          failureThreshold: 3 # Указываем количество неудачных попыток перед тем, как объявить о сбое
+      # В данном случае мы используем `startupProbe`, чтобы убедиться, что под не обрабатывает запросы до завершения инициализации
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-web-app
+  namespace: my-app
+spec:
+  selector:
+    app: my-web-app
+  ports:
+    - protocol: TCP
+      port: 80 # Порт, на который будет направлен трафик
+      targetPort: 80 # Порт, на котором работает контейнер
+  type: ClusterIP # Используем ClusterIP для внутреннего доступа
